@@ -65,7 +65,15 @@ pagination_dir: page
 ## Themes: https://hexo.io/themes/
 theme: aloha
 
-# aloha theme
+# Deployment
+## Docs: https://hexo.io/docs/deployment.html
+deploy:
+  type: git
+  repo: git@github.com:joeleee/joeleee.github.io.git
+  branch: master
+
+# aloha
+## theme
 sidebar:
   bio: Developer/iOS/Basketball
   location: Beijing
@@ -73,10 +81,12 @@ sidebar:
   social:
     github: https://github.com/joeleee
     weibo: http://weibo.com/209093838?is_all=1
-
-# Deployment
-## Docs: https://hexo.io/docs/deployment.html
-deploy:
-  type: git
-  repo: git@github.com:joeleee/joeleee.github.io.git
-  branch: master
+## duoshuo comment
+duoshuo:
+  shortname: joegithubio
+## 打赏
+donate:
+  enable: true #设定打赏功能是否可用
+  text: 我知道不会有人打赏，可是万一有人想不开呢？ #自定义打赏说明文字
+  wechat: /WechatPay.jpg #微信二维码图片的路径
+  alipay: /Alipay.jpg #支付宝二维码图片的路径
