@@ -15,6 +15,10 @@ https://github.com/henryhuang/hexo-theme-aloha
 ## 这些图标也不错 ##
 http://semantic-ui.com/elements/icon.html
 
+## 添加打赏 ##
+http://colin1994.github.io/2016/06/02/hexo-copyright-and-donate/?utm_source=tuicool&utm_medium=referral
+http://deliazhi.com/2016/10/13/add-donate-into-your-blog/
+
 ## 一些错误处理 ##
 http://blog.anzhehong.com/2016/03/15/Hexo%E5%8D%9A%E5%AE%A2%E6%90%AD%E5%BB%BA/
 http://www.jianshu.com/p/465830080ea9
