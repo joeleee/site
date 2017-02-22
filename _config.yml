@@ -88,5 +88,5 @@ duoshuo:
 donate:
   enable: true #设定打赏功能是否可用
   text: 我知道不会有人打赏，可是万一有人想不开呢？ #自定义打赏说明文字
-  wechat: https://timgsa.baidu.com/timg?image&quality=80&size=b10000_10000&sec=1488363649&di=af71ddbd9eef14ebad060c925ccff922&imgtype=jpg&src=http%3A%2F%2Fg.hiphotos.baidu.com%2Fimage%2Fpic%2Fitem%2F267f9e2f07082838699a738cb199a9014d08f197.jpg #微信二维码图片的路径
-  alipay: https://timgsa.baidu.com/timg?image&quality=80&size=b10000_10000&sec=1488363614&di=be070d0cdb164f56c13f6b816a93bb84&imgtype=jpg&src=http%3A%2F%2Fh.hiphotos.baidu.com%2Fimage%2Fpic%2Fitem%2Ff636afc379310a55e47a716cbe4543a9832610cf.jpg #支付宝二维码图片的路径
+  wechat: /images/wechat_small.jpg #微信二维码图片的路径
+  alipay: /images/alipay_small.jpg #支付宝二维码图片的路径
