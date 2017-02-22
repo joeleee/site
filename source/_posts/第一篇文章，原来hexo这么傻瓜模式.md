@@ -6,3 +6,7 @@ tags:
 
 http://www.jianshu.com/p/ab21abc31153
 https://hexo.io/zh-cn/docs/writing.html
+
+这个主题不错，多谢作者
+http://huangyijie.com/
+https://github.com/henryhuang/hexo-theme-aloha
