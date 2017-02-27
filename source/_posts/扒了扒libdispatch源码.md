@@ -127,57 +127,58 @@ dispatch_queue_t dispatch_queue_create(const char *label, dispatch_queue_attr_t 
 * 每一个用户创建的队列都会指向一个 ***root queue***，这里的指向是说 ***do_targetq*** 指针，就是开始那张图中的的箭头走向；
 * 串型队列和并行队列是通过 ***width*** 区分的，串型为1，并行为32766；
 * 通过上面的代码可以发现，队列的 ***dq_serialnum*** 是从16开始自增的，其中1-15号队列被系统占用；
-* ***do_targetq*** 的寓意暂时还不是很明白。
+* ***do_targetq*** 的意义暂时还不是很明白，等大侠解答。
 
 
 ## dispatch\_sync ##
 ``` c
 void dispatch_sync(dispatch_queue_t dq, dispatch_block_t work) {
-
     dispatch_function_t func = _dispatch_Block_invoke(work);
     void *ctxt = work;
 
-    //:如果队列宽度为1
-    if (dq->dq_width == 1) {
+    // 如果队列宽度为1
+    if (dq->dq_width == 1) { // 主线程会从这里走
         dispatch_barrier_sync_f(dq, ctxt, func);
         return;
     }
 
-    dispatch_thread_event_s event = _dispatch_thread_event_init(&event);
-    uint32_t th_self = _dispatch_tid_self();
-    struct dispatch_continuation_s dc = dispatch_continuation_s_init(dq);
-
-    uint64_t dq_state = os_atomic_load2o(dq, dq_state, relaxed);
-    if (unlikely(_dq_state_drain_locked_by(dq_state, th_self))) {
-        DISPATCH_CLIENT_CRASH(dq, "dispatch_sync called on queue already owned by current thread");
+    if (dq->dq_items_tail) {
+        dispatch_thread_event_s event = _dispatch_thread_event_init(&event);
+        uint32_t th_self = _dispatch_tid_self();
+        struct dispatch_continuation_s dc = dispatch_continuation_s_init(dq);
+        uint64_t dq_state = os_atomic_load2o(dq, dq_state, relaxed);
+        if (unlikely(_dq_state_drain_locked_by(dq_state, th_self))) {
+            DISPATCH_CLIENT_CRASH(dq, "dispatch_sync called on queue already owned by current thread");
+        }
+        
+        // ->_dispatch_queue_push_inline，加在队列尾部，同时wakeup
+        _dispatch_continuation_push_sync_slow(dq, &dc);
+        
+        // 等待任务到达
+        _dispatch_thread_event_wait(&event);
     }
 
-    _dispatch_continuation_push_sync_slow(dq, &dc);
-    //:->_dispatch_queue_push_inline//:加在队列尾部，同时wakeup
-
-    _dispatch_thread_event_wait(&event);
-    //:->_dispatch_thread_event_wait_slow//:等待任务到达
-
-    //:_dispatch_sync_function_invoke_inline
-    //:入栈，保存现场
+    // 入栈，保存现场
     dispatch_thread_frame_s dtf;
     _dispatch_thread_frame_push(&dtf, dq);
-    //:执行方法
+    // 直接执行方法
     _dispatch_client_callout(ctxt, func);
-    //:出栈，恢复现场
+    // 出栈，恢复现场
     _dispatch_perfmon_workitem_inc();
     _dispatch_thread_frame_pop(&dtf);
-
-    //:结束，恢复队列状态，wakeup队列
+    // 结束，恢复队列状态，wakeup队列
     _dispatch_non_barrier_complete(dq);
 }
 
-void _dispatch_thread_event_wait_slow(dispatch_thread_event_t dte) {
+// 等待任务到达
+void _dispatch_thread_event_wait(dispatch_thread_event_t dte) {
+    /*......*/
     kern_return_t kr;
     do {
         kr = semaphore_wait(dte->dte_semaphore);
     } while (unlikely(kr == KERN_ABORTED));
     DISPATCH_SEMAPHORE_VERIFY_KR(kr);
+    /*......*/
     return;
 }
 ```
@@ -194,28 +195,45 @@ void dispatch_barrier_sync(dispatch_queue_t dq, dispatch_block_t work) {
     dispatch_function_t func = _dispatch_Block_invoke(work);
 
     dispatch_thread_event_s event = _dispatch_thread_event_init(&event);
-    uint32_t th_self = _dispatch_tid_self();
     struct dispatch_continuation_s dbss = dispatch_continuation_s_init(dq);
+    
+    // 主线程 dispatch_sync 的任务必须在主线程执行
+    // It's preferred to execute synchronous blocks on the current thread
+    // due to thread-local side effects, etc. However, blocks submitted
+    // to the main thread MUST be run on the main thread
+    if (slowpath(_dispatch_queue_is_thread_bound(dq))) {
+        // consumed by _dispatch_barrier_sync_f_slow_invoke
+        // or in the DISPATCH_COCOA_COMPAT hunk below
+        _dispatch_continuation_voucher_set(&dbsc.dbsc_dc, dq, 0);
+        // save frame linkage for _dispatch_barrier_sync_f_slow_invoke
+        _dispatch_thread_frame_save_state(&dbsc.dbsc_dtf);
+        // thread bound queues cannot mutate their target queue hierarchy
+        // so it's fine to look now
+        _dispatch_introspection_barrier_sync_begin(dq, func);
+    }
 
+    // 检查是否有死锁
+    uint32_t th_self = _dispatch_tid_self();
     uint64_t dq_state = os_atomic_load2o(dq, dq_state, relaxed);
     if (unlikely(_dq_state_drain_locked_by(dq_state, th_self))) {
         DISPATCH_CLIENT_CRASH(dq, "dispatch_barrier_sync called on queue already owned by current thread");
     }
 
-    _dispatch_continuation_push_sync_slow(dq, &dc); //:->_dispatch_queue_push_inline//:加在队列尾部，同时wakeup
-    _dispatch_thread_event_wait(&event); //:->_dispatch_thread_event_wait_slow//:等待任务到达
+    // 加在队列尾部，同时wakeup
+    _dispatch_continuation_push_sync_slow(dq, &dc);
+    // 等待任务到达
+    _dispatch_thread_event_wait(&event);
 
-    //:_dispatch_sync_function_invoke_inline
-    //:入栈，保存现场
+    // 入栈，保存现场
     dispatch_thread_frame_s dtf;
     _dispatch_thread_frame_push(&dtf, dq);
-    //:执行方法
+    // 执行方法
     _dispatch_client_callout(ctxt, func);
-    //:出栈，恢复现场
+    // 出栈，恢复现场
     _dispatch_perfmon_workitem_inc();
     _dispatch_thread_frame_pop(&dtf);
 
-    //:结束，恢复队列状态，wakeup队列
+    // 结束，恢复队列状态，wakeup队列
     _dispatch_barrier_complete(dq);
 }
 ```
