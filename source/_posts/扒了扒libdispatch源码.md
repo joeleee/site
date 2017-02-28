@@ -19,7 +19,7 @@ tags:
 * 一直想知道为什么 ***dispatch\_sync*** 死锁崩溃是输出的信息是 ***barrier***
 * ......
 
-好了，来来来，扒扒源码就全知道了，当然源码中我还是有很多疑惑的地方，希望大家拍，反正我只是搬运工，哈哈😄
+好了，来来来，扒扒源码就全知道了，当然源码中我还是有很多疑惑的地方，欢迎大家拍，反正我只是搬运工，哈哈😄
 ***
 
 # 全景结构图 #
@@ -479,9 +479,14 @@ out_with_deferred_compute_owned:
  * 如果是串型处理，那么会在while循环中依次将队首任务弹出队列并执行；
  * 如果是并行处理，同样会依次将任务出队列，进行转发到其它线程执行；
  * 如果是一个barrier任务，同时不在 ***DISPATCH_QUEUE_IN_BARRIER*** 状态中，那么会推出执行，将任务返回给 ***\_dispatch\_queue\_class\_invoke***，最后会调用 *** _dispatch_queue_drain_deferred_invoke*** 方法将这个任务推迟。
- * 如果是一个barrier任务，同时在 ***DISPATCH_QUEUE_IN_BARRIER*** 状态中，将会直接执行这个barrier任务。
+ * 如果是一个barrier任务，同时在 ***DISPATCH_QUEUE_IN_BARRIER*** 状态中，那么这个就是要等待的barrier任务，将会直接执行。
  * 这里写的不是很清晰明了，因为这里面的各种状态和标记位有点绕晕了，***等大神指点***。
 
-
 ---
-未完，明天继续...
+
+
+# 最后 #
+就酱，大概知道了dispatch的冰山一角，libdispatch里还有很多很多东西，比如 ***semaphore, timer, group***，这次先挖这么多。
+
+另外，发现在全局的queue里面有一个叫 ***"runloop-queue"*** 的队列，这个应该就是往runloop中提交任务的队列，更具 ***runloop*** 的源码，循环中会询问dispatch是否有任务插入执行，应该就是检查这个队列。
+
