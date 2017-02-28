@@ -1,0 +1,189 @@
+---
+title: In-App-Purcharse 摘要
+date: 2014-01-09 15:47:10
+
+categories:
+- Objective-C
+
+tags:
+- In-App-Purcharse
+
+---
+
+这并不是一篇关于 In-App-Purcharse 的专业深入分析文章，只是在初次浏览有关IAP官方文档后记录的一些需要注意的地方，就像是课堂笔记。
+
+因为这是原版、并且涉及到支付的内容，所以就不翻译，以免引起歧义，原文会让你更准确的理解文档。
+
+Updated by Joe Lee - 2014.1.9
+
+---
+
+# 购买信息标识 #
+
+To provide this information, populate the applicationUsername property of the payment object with a one-way hash of the user’s account name on your server
+only in iOS 7 ！！
+
+---
+
+
+# 结束购买 #
+
+Finishing a transaction tells Store Kit that you’ve completed everything needed for the purchase. Unfinished transactions remain in the queue until they’re finished, and the transaction queue observer is called every time your app is launched so your app can finish the transactions.
+Complete all of the following actions before you finish the transaction:
+Persist the purchase.
+Download associated content.
+
+Update your app’s UI to let the user access the product. 
+
+---
+
+
+# 不要这样 #
+
+Don’t try to call the finishTransaction: method before the transaction is actually completed, attempting to use some other mechanism in your app to track the transaction as unfinished. Store Kit isn’t designed to be used this way. Doing so prevents your app from downloading Apple-hosted content and can lead to other issues. 
+
+After you finish a transaction, don’t take any actions on that transaction or do any work to deliver the product. If any work remains, your app isn’t ready to finish the transaction yet. 
+
+---
+
+
+# 订阅时间的计算 #
+
+ Don’t calculate the subscription period by adding a subscription duration to the purchase date. This approach fails to take into account the free trial period, the marketing opt-in period, and the content made available immediately after the user purchased the subscription. 
+
+---
+
+
+# 自动续订的策略 #
+
+The App Store renews the subscription slightly before it expires, to prevent any lapse in the subscription. However, lapses are still possible. For example, if the user’s payment information is no longer valid, the first renewal attempt would fail. If the user doesn’t update this information until after the subscription expires, there would be a short lapse in the subscription between the expiration date and the date that a subsequent automatic renewal succeeds. The user can also disable automatic renewal and intentionally let the subscription expire, then renew it at a later date, creating a longer lapse in the subscription. Make sure your app’s subscription logic can handle lapses of various durations correctly.
+
+After a subscription is successfully renewed, Store Kit adds a transaction for the renewal to the transaction queue. Your app checks the transaction queue on launch and handles the renewal the same way as any other transaction. Note that if your app is already running when the subscription renews, the transaction observer is not called; your app finds out about the renewal the next time it’s launched. 
+
+---
+
+
+# 取消订阅 #
+
+To check whether a purchase has been canceled, look for the Cancellation Date field in the receipt. If the field has a date in it, regardless of the subscription’s expiration date, the purchase has been canceled—treat a canceled receipt the same as if no purchase had ever been made.
+
+Depending on the type of product, you may be able to check only the currently active subscription, or you may need to check all past subscriptions. For example, a magazine app would need to check all past subscriptions to determine which issues the user had access to. 
+
+---
+
+
+# 多平台购买 #
+
+Product identifiers are associated with a single app. Apps that have both an iOS and OS X version have separate products with separate product identifiers on each platform. You could let users who have a subscription in an iOS app access the content from an OS X app (or vice versa), but implementing that functionality is your responsibility. You would need some system for identifying users and keeping track of what content they’ve subscribed to, similar to what you would implement for an app that uses non-renewable subscriptions.
+
+---
+
+
+# 自动续订测试 # 
+
+For the sake of testing, there are some differences in behavior between auto-renewable subscriptions in the production environment and in the test environment.
+Renewal happens at an accelerated rate, and auto-renewable subscriptions renew a maximum of six times per day. This lets you test how your app handles a subscription renewal, a subscription lapse, and a subscription history that includes gaps.
+Because of the accelerated expiration and renewal rate, the subscription can expire before the system starts trying to renew the subscription, leaving a small lapse in the subscription period. Such lapses are also possible in production for a variety of reasons—make sure your app handles them correctly.
+
+---
+
+
+# 恢复购买验证 #
+
+Restoring purchases prompts for the user’s App Store credentials, which interrupts the flow of your app: because of this, don’t automatically restore purchases, especially not every time your app is launched. 
+
+---
+
+
+# 恢复receipt #
+
+in iOS 7, use initWithReceiptProperties: method of SKReceiptRefreshRequest.
+
+if you need to support versions of iOS earlier than iOS 7, where the app receipt isn’t available, restore completed transactions instead.
+
+---
+
+
+# restore #
+
+in iOS 7，If your app sets a value for the applicationUsername property of its payment requests, as described in “Detecting Irregular Activity,” use therestoreCompletedTransactionsWithApplicationUsername: method to provide the same information when restoring transactions.
+
+---
+
+
+# 初次提交商品 #
+
+The first time you submit your app for review, you also need to submit in-app products to be reviewed at the same time. After the first submission, you can submit updates to your app and products for review independently of each other. 
+
+---
+
+
+# 提交测试 #
+
+When validating receipts on your server, your server needs to be able to handle a production-signed app getting its receipts from Apple’s test environment. The recommended approach is for your production server to always validate receipts against the production App Store first. If validation fails with the error code “Sandbox receipt used in production”, validate against the test environment instead. 
+
+---
+
+
+# 验证receipt #
+
+Perform receipt validation immediately after your app is launched, before displaying any user interface or spawning any child processes. Implement this check in the main function, before the NSApplicationMain function is called. For additional security, you may repeat this check periodically while your application is running. 
+
+---
+
+
+# receipt的验证响应 #
+
+The receipt field on the JSON object holds the parsed information from the receipt. The receipt data for an auto-renewable subscription includes some additional keys, and some other keys are used differently for subscriptions. For information about keys found in a receipt, see “Receipt Fields.”
+In addition to the receipt field, the response may also include two other fields. If the user’s subscription is active and was renewed by a transaction that took place after the receipt your server sent to the App Store, the latest_receipt field includes a base-64 encoded receipt for the last renewal for this subscription. The decoded data for this new receipt is also provided in the latest_expired_receipt_info field. Your server can use this new receipt to maintain a record of the most recent renewal.
+
+---
+
+
+# 几个关键的receipt验证响应字段 #
+
+Receipt Expiration Date
+The date that the app receipt expires.
+ASN.1 Field Type 21
+ASN.1 Field Value IA5STRING, interpreted as an RFC 3339 date
+JSON Field Name expiration_date
+JSON Field Value IA5STRING, interpreted as an RFC 3339 date
+This key is present only for apps purchased through the Volume Purchase Program. If this key is not present, the receipt does not expire.
+When validating a receipt, compare this date to the current date to determine whether the receipt is expired. Do not try to use this date to calculate any other information, such as the time remaining before expiration. 
+
+Original Transaction Identifier
+For a transaction that restores a previous transaction, the transaction identifier of the original transaction. Otherwise, identical to the transaction identifier.
+ASN.1 Field Type 1705
+ASN.1 Field Value UTF8STRING
+JSON Field Name original_transaction_id
+JSON Field Value string
+This value corresponds to the original transaction’s transactionIdentifier property.
+All receipts in a chain of renewals for an auto-renewable subscription have the same value for this field. 
+
+Purchase Date
+The date and time that the item was purchased.
+ASN.1 Field Type 1704
+ASN.1 Field Value IA5STRING, interpreted as an RFC 3339 date
+JSON Field Name purchase_date
+JSON Field Value string, interpreted as an RFC 3339 date
+This value corresponds to the transaction’s transactionDate property.
+For a transaction that restores a previous transaction, the purchase date is the date of the restoration. Use “Original Purchase Date” to get the date of the original transaction.
+In an auto-renewable subscription receipt, this is always the date when the subscription was purchased or renewed, regardless of whether the transaction has been restored. 
+
+Original Purchase Date
+For a transaction that restores a previous transaction, the date of the original transaction.
+ASN.1 Field Type 1706
+ASN.1 Field Value IA5STRING, interpreted as an RFC 3339 date
+JSON Field Name original_purchase_date
+JSON Field Value string, interpreted as an RFC 3339 date
+This value corresponds to the original transaction’s transactionDate property.
+In an auto-renewable subscription receipt, this indicates the beginning of the subscription period, even if the subscription has been renewed.
+
+Subscription Expiration Date
+The expiration date for the subscription, expressed as the number of milliseconds since January 1, 1970, 00:00:00 GMT.
+ASN.1 Field Type 1708
+ASN.1 Field Value IA5STRING, interpreted as an RFC 3339 date
+JSON Field Name expires_date
+JSON Field Value number
+This key is only present for auto-renewable subscription receipts.
+ 
