@@ -1,0 +1,148 @@
+---
+title: dispatch_semaphore搬运源码
+date: 2017-03-13 15:47:10
+
+categories:
+- Objective-C
+
+tags:
+- libdispatch
+- GCD
+---
+
+之前这篇文章[扒了扒libdispatch源码](http://joeleee.github.io/2017/02/21/%E6%89%92%E4%BA%86%E6%89%92libdispatch%E6%BA%90%E7%A0%81/)搬运了一些libdispatch的async和sync向光的方法，后来又看了看semaphore相关的，因为东西不多，逻辑也相对简单一些，所以只靠注释差不多就能解释清楚了。
+***
+
+# dispatch\_semaphore\_t的结构 #
+``` c
+struct dispatch_semaphore_s {
+    // 引用计数之类的基础属性
+    OS_OBJECT_STRUCT_HEADER(dispatch_semaphore);
+    // dispatch基础类的共有变量
+    struct dispatch_semaphore_s *volatile do_next;
+    struct dispatch_queue_s *do_targetq;
+    void *do_ctxt;
+    void *do_finalizer;
+    // semaphore的特有变量
+    long volatile dsema_value; // 当前资源数量，会动态变化
+    long dsema_orig;
+};
+```
+这里面 ***dsema_value*** 是用来表示资源数的值，当然对它的增减也都是原子操作。***dispatch\_semaphore\_t*** 是 ***dispatch\_semaphore\_s*** 的指针表示。
+
+---
+
+## dispatch\_semaphore\_create ##
+``` c
+dispatch_semaphore_t dispatch_semaphore_create(long value) {
+    dispatch_semaphore_t dsema;
+
+    // If the internal value is negative, then the absolute of the value is
+    // equal to the number of waiting threads. Therefore it is bogus to
+    // initialize the semaphore with a negative value.
+    if (value < 0) {
+        return DISPATCH_BAD_INPUT;
+    }
+
+    dsema = (dispatch_semaphore_t)_dispatch_alloc(DISPATCH_VTABLE(semaphore), sizeof(struct dispatch_semaphore_s));
+
+    dsema->do_next = DISPATCH_OBJECT_LISTLESS;
+    dsema->do_targetq = _dispatch_get_root_queue(_DISPATCH_QOS_CLASS_DEFAULT, false);
+    dsema->dsema_value = value;
+    dsema->dsema_orig = value;
+
+    return dsema;
+}
+```
+可以看到，创建 ***dispatch\_semaphore\_t*** 对象的时候资源数不能小于0。
+***do_targetq*** 还没看见在哪里有什么用，其中 ***QOS*** 是 ***quality of service*** 的缩写。
+
+---
+
+## dispatch\_semaphore\_signal ##
+``` c
+long dispatch_semaphore_signal(dispatch_semaphore_t dsema) {
+    long value = os_atomic_inc2o(dsema, dsema_value, release);
+    if (value > 0) {
+        return 0; // 增加资源成功
+    }
+
+    int ret = sem_post(&dsema->dsema_sem); // 需要唤醒线程
+    DISPATCH_SEMAPHORE_VERIFY_RET(ret);
+    return 1;
+}
+```
+就是对 ***dsema_value*** 加1：
+
+ * 如果加1后大于0，那么增加资源成功；
+ * 如果加1后小于等于0，说明有地方调用了 ***wait*** 方法同步等待资源，那就需要调用 ***sem_post*** 将等待的线程唤醒。
+
+---
+
+## dispatch\_semaphore\_wait ##
+``` c
+long dispatch_semaphore_wait(dispatch_semaphore_t dsema, dispatch_time_t timeout) {
+    long value = os_atomic_dec2o(dsema, dsema_value, acquire); // 获取资源，对资源减1
+    if (value >= 0) {
+        return 0; // 成功获取资源
+    }
+
+    // 下面进入等待状态
+    long orig;
+    struct timespec _timeout;
+    int ret;
+
+    switch (timeout) {
+        default: // 首先是自定义等待时间
+            do {
+                uint64_t nsec = _dispatch_time_nanoseconds_since_epoch(timeout);
+                _timeout.tv_sec = (typeof(_timeout.tv_sec))(nsec / NSEC_PER_SEC);
+                _timeout.tv_nsec = (typeof(_timeout.tv_nsec))(nsec % NSEC_PER_SEC);
+                ret = slowpath(sem_timedwait(&dsema->dsema_sem, &_timeout)); // 尝试获取资源，带有时间有效的参数
+            } while (ret == -1 && errno == EINTR);
+
+            if (!(ret == -1 && errno == ETIMEDOUT)) {
+                DISPATCH_SEMAPHORE_VERIFY_RET(ret); // 在限定时间内成功获取资源
+                break;
+            }
+            // Fall through and try to undo what the fast path did to
+            // dsema->dsema_value
+        case DISPATCH_TIME_NOW: // 如果自定义等待时间到了，就按照立即获取资源的方式处理
+            orig = dsema->dsema_value;
+            while (orig < 0) {
+                // 等待超时，将资源+1，因为一开始对资源减1了，所以得加回来
+                if (os_atomic_cmpxchgvw2o(dsema, dsema_value, orig, orig + 1, &orig, relaxed)) {
+                    errno = ETIMEDOUT;
+                    return -1; // 获取资源失败
+                }
+            }
+            // Another thread called semaphore_signal().
+            // Fall through and drain the wakeup.
+        case DISPATCH_TIME_FOREVER:
+            do {
+                ret = sem_wait(&dsema->dsema_sem);
+            } while (ret != 0);
+            DISPATCH_SEMAPHORE_VERIFY_RET(ret);
+            break;
+    }
+
+    return 0; // 获取资源成功
+}
+```
+***dispatch\_semaphore\_wait*** 一进入首先对 ***dsema_value*** 减1，如果减后大于等于0，那么获取资源成功。如果获取资源失败，那么进入下面的流程处理：
+
+* 自定义超时时长
+
+	自定义超时时间的话，就在while循环中一遍遍去取尝试就好了，直到超时，如果在限时内获取到了资源，那就return了。如果获取资源等待超时，那么就进入 ***立刻获取资源*** 的case中，做最后一次尝试。
+
+* 立刻获取资源
+
+	如果是立刻获取资源，就看一下 ***dsema_value*** 是不是>=0，如果是，那么表示资源获取成功了。否则的话说明资源获取失败，同时退出等待返回超时，因为一开始对资源进行了减1，所以这时要再对重新资源加1，表示不在等待。
+
+* 一直等待资源
+
+	最后一种case，就是 ***DISPATCH\_TIME\_FOREVER*** 一直等待，就在while循环中一直调用 ***sem_wait*** 等待就好。其中 ***sem_wait*** 对应的唤醒方法应该就是前面的 ***sem_post***。由此可见 ***dsema_value*** 的值是有可能为负数的，说明当前有排队等待资源的情况。
+
+---
+
+对源码的翻译有误希望大家使劲拍。
