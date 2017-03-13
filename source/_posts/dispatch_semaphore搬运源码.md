@@ -67,6 +67,10 @@ long dispatch_semaphore_signal(dispatch_semaphore_t dsema) {
         return 0; // 增加资源成功
     }
 
+    if (value == LONG_MIN) { // 等待数量到极限了，无药可救，那就制造一个崩溃吧...
+        DISPATCH_CLIENT_CRASH(value, "Unbalanced call to dispatch_semaphore_signal()");
+    }
+
     int ret = sem_post(&dsema->dsema_sem); // 需要唤醒线程
     DISPATCH_SEMAPHORE_VERIFY_RET(ret);
     return 1;
