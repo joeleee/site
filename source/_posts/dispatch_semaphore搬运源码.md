@@ -1,6 +1,6 @@
 ---
 title: dispatch_semaphore搬运源码
-date: 2017-03-13 15:47:10
+date: 2017-03-13 10:47:10
 
 categories:
 - Objective-C
@@ -10,7 +10,7 @@ tags:
 - GCD
 ---
 
-之前这篇文章[扒了扒libdispatch源码](http://joeleee.github.io/2017/02/21/%E6%89%92%E4%BA%86%E6%89%92libdispatch%E6%BA%90%E7%A0%81/)搬运了一些libdispatch的async和sync向光的方法，后来又看了看semaphore相关的，因为东西不多，逻辑也相对简单一些，所以只靠注释差不多就能解释清楚了。
+之前这篇文章[扒了扒libdispatch源码](http://joeleee.github.io/2017/02/21/%E6%89%92%E4%BA%86%E6%89%92libdispatch%E6%BA%90%E7%A0%81/)搬运了一些libdispatch的async和sync向关的方法，后来又看了看semaphore相关的，因为东西不多，逻辑也相对简单一些，所以只靠注释差不多就能解释清楚了。
 ***
 
 # dispatch\_semaphore\_t的结构 #
@@ -32,7 +32,7 @@ struct dispatch_semaphore_s {
 
 ---
 
-## dispatch\_semaphore\_create ##
+# dispatch\_semaphore\_create #
 ``` c
 dispatch_semaphore_t dispatch_semaphore_create(long value) {
     dispatch_semaphore_t dsema;
@@ -59,7 +59,7 @@ dispatch_semaphore_t dispatch_semaphore_create(long value) {
 
 ---
 
-## dispatch\_semaphore\_signal ##
+# dispatch\_semaphore\_signal #
 ``` c
 long dispatch_semaphore_signal(dispatch_semaphore_t dsema) {
     long value = os_atomic_inc2o(dsema, dsema_value, release);
@@ -83,7 +83,7 @@ long dispatch_semaphore_signal(dispatch_semaphore_t dsema) {
 
 ---
 
-## dispatch\_semaphore\_wait ##
+# dispatch\_semaphore\_wait #
 ``` c
 long dispatch_semaphore_wait(dispatch_semaphore_t dsema, dispatch_time_t timeout) {
     long value = os_atomic_dec2o(dsema, dsema_value, acquire); // 获取资源，对资源减1
